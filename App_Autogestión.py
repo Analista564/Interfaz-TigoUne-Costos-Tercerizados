@@ -23,7 +23,7 @@ st.markdown(
 
         .stApp { background-color: #f1f5f9; }
 
-        /* Contenedor tipo "Hoja/Página" más ancho */
+        /* Contenedor tipo "Hoja/Página" amplio */
         .block-container {
             max-width: 1550px !important;
             padding: 35px 50px !important;
@@ -589,9 +589,17 @@ def procesar_cruce_python(
       .map(conteo_cuadro)
       .fillna(0)
   )
+
+  # CRUCE CON DIAN ROBUSTO
   df_costos_filtered["Cruce con DIAN"] = df_costos_filtered[
       "ConcatenadoRequerimiento"
-  ].apply(lambda x: "Cruza" if x in dian_set else "Alerta")
+  ].apply(
+      lambda x: (
+          "Cruza"
+          if (pd.notna(x) and str(x).strip() != "" and x in dian_set)
+          else "Alerta"
+      )
+  )
 
   # 8. Agrupación RQ para Alertas & Status OBS_2
   agrupado_status = {}
@@ -689,7 +697,7 @@ st.markdown(
 )
 
 # ==========================================
-# SECCIÓN 1: CARGA DE BASES DE DATOS Y EJECUCIÓN
+# SECCIÓN 1: CARGA DE BASES DE DATOS Y EJECUCIÓN (CON TOOLTIPS DE COMENTARIOS)
 # ==========================================
 st.markdown("<h2>1. 📁 Carga de Bases de Datos</h2>", unsafe_allow_html=True)
 st.markdown(
@@ -703,7 +711,14 @@ st.markdown('<div class="card-box">', unsafe_allow_html=True)
 col1, col2, col3 = st.columns([1, 1, 1])
 
 with col1:
-  f1 = st.file_uploader("1. BBDD Costos Novasoft (Obligatorio)", type=["xlsx"])
+  f1 = st.file_uploader(
+      "1. BBDD Costos Novasoft (Obligatorio)",
+      type=["xlsx"],
+      help=(
+          "Cargue el archivo “COSTOS Y PRESUPUESTOS RAFA” generado del módulo"
+          " CONTABILIDAD NIF Novasoft"
+      ),
+  )
   if f1:
     guardar_archivo(f1)
     st.markdown(
@@ -712,7 +727,15 @@ with col1:
     )
 
 with col2:
-  f2 = st.file_uploader("2. BBDD Reversiones (Obligatorio)", type=["xlsx"])
+  f2 = st.file_uploader(
+      "2. BBDD Reversiones (Obligatorio)",
+      type=["xlsx"],
+      help=(
+          "Cargue el archivo unificado de las Reversiones enviadas por Tigo"
+          " UNE, Únicamente las columnas RQ, Valor Facturado, EA, FV, Mes"
+          " formato “Julio-2026”."
+      ),
+  )
   if f2:
     guardar_archivo(f2)
     st.markdown(
@@ -721,7 +744,14 @@ with col2:
     )
 
 with col3:
-  f3 = st.file_uploader("3. BBDD F-100 (Obligatorio)", type=["xlsx"])
+  f3 = st.file_uploader(
+      "3. BBDD F-100 (Obligatorio)",
+      type=["xlsx"],
+      help=(
+          "Cargue el archivo de la hoja F–100 G. TIGO enviado por el área de"
+          " Facturación."
+      ),
+  )
   if f3:
     guardar_archivo(f3)
     st.markdown(
@@ -734,7 +764,14 @@ st.markdown("<br>", unsafe_allow_html=True)
 col4, col5, col6 = st.columns([1, 1, 1])
 
 with col4:
-  f4 = st.file_uploader("4. Cuadro-control (Obligatorio)", type=["xlsx"])
+  f4 = st.file_uploader(
+      "4. Cuadro-control (Obligatorio)",
+      type=["xlsx"],
+      help=(
+          "Cargue el archivo “Cuadro Control” enviado por Tigo UNE hasta la"
+          " columna PROVISIÓN."
+      ),
+  )
   if f4:
     guardar_archivo(f4)
     st.markdown(
@@ -743,7 +780,14 @@ with col4:
     )
 
 with col5:
-  f5 = st.file_uploader("5. Facturas Nova (Obligatorio)", type=["xlsx"])
+  f5 = st.file_uploader(
+      "5. Facturas Nova (Obligatorio)",
+      type=["xlsx"],
+      help=(
+          "Cargue el archivo “Factura CXP consulta” generado desde el módulo"
+          " CONTABILIDAD NIF Novasoft"
+      ),
+  )
   if f5:
     guardar_archivo(f5)
     st.markdown(
@@ -752,7 +796,11 @@ with col5:
     )
 
 with col6:
-  f6 = st.file_uploader("6. Facturas Dian (Obligatorio)", type=["xlsx"])
+  f6 = st.file_uploader(
+      "6. Facturas Dian (Obligatorio)",
+      type=["xlsx"],
+      help="Cargue el archivo generado por la DIAN",
+  )
   if f6:
     guardar_archivo(f6)
     st.markdown(
@@ -837,33 +885,21 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
           else 0
       )
 
-      # BUSCAR COLUMNA DE DIAN (BÚSQUEDA INSENSIBLE A MAYÚSCULAS Y ESPACIOS)
+      # CÁLCULO PRECISO Y EXATCO DE ALERTAS DIAN (Ajuste Solucionado)
       col_dian_cruce = None
       for c in df_depurado.columns:
         if "DIAN" in c.upper():
           col_dian_cruce = c
           break
 
-      if col_dian_cruce and "FP" in df_depurado.columns:
-        # CONTEO ROBUSTO TOLERANTE A ESPACIOS
-        mask_fp = df_depurado["FP"].notna() & (
-            df_depurado["FP"].astype(str).str.strip() != ""
-        )
-        mask_alerta = (
-            df_depurado[col_dian_cruce]
-            .astype(str)
-            .str.upper()
-            .str.contains("ALERTA", na=False)
-        )
-        cant_alertas_dian = len(df_depurado[mask_fp & mask_alerta])
+      if col_dian_cruce and "Cruce con DIAN" in df_depurado.columns:
+        cant_alertas_dian = (
+            df_depurado["Cruce con DIAN"].astype(str).str.strip() == "Alerta"
+        ).sum()
       elif col_dian_cruce:
-        mask_alerta = (
-            df_depurado[col_dian_cruce]
-            .astype(str)
-            .str.upper()
-            .str.contains("ALERTA", na=False)
-        )
-        cant_alertas_dian = len(df_depurado[mask_alerta])
+        cant_alertas_dian = (
+            df_depurado[col_dian_cruce].astype(str).str.strip() == "Alerta"
+        ).sum()
       else:
         cant_alertas_dian = 0
 
