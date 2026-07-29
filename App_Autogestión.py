@@ -23,15 +23,15 @@ st.markdown(
 
         .stApp { background-color: #f1f5f9; }
 
-        /* Contenedor tipo "Hoja/Página" */
+        /* Contenedor tipo "Hoja/Página" más ancho */
         .block-container {
-            max-width: 1300px !important;
-            padding: 35px 45px !important;
+            max-width: 1550px !important;
+            padding: 35px 50px !important;
             background-color: #ffffff;
             border: 2px solid #cbd5e1;
             border-radius: 12px;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
-            margin-top: 25px;
+            margin-top: 20px;
             margin-bottom: 35px;
         }
 
@@ -47,7 +47,7 @@ st.markdown(
             align-items: center;
             justify-content: space-between;
             background: linear-gradient(135deg, #f0f7fc 0%, #ffffff 100%);
-            padding: 22px 30px;
+            padding: 20px 30px;
             border-radius: 10px;
             border-left: 7px solid #1179bf;
             margin-bottom: 25px;
@@ -62,7 +62,7 @@ st.markdown(
             gap: 25px;
         }
         .header-brand img {
-            height: 65px; /* Altura ideal para el logo completo con slogan */
+            height: 65px;
             width: auto;
             object-fit: contain;
         }
@@ -155,33 +155,43 @@ st.markdown(
             border: 1px solid #c2e28f;
         }
 
-        /* TARJETAS KPI MINIMALISTAS */
+        /* TARJETAS KPI MINIMALISTAS CON SUBTEXTO DE DINERO */
         .kpi-card-exec {
             background-color: #ffffff;
             border-radius: 10px;
-            padding: 16px 14px;
+            padding: 14px 12px;
             border: 1px solid #e2e8f0;
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03);
             text-align: center;
-            min-height: 125px;
+            min-height: 135px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
         }
 
         .kpi-card-exec h4 {
-            font-size: 0.82rem !important;
+            font-size: 0.78rem !important;
             font-weight: 700 !important;
-            margin: 0 0 6px 0 !important;
-            line-height: 1.25;
+            margin: 0 0 4px 0 !important;
+            line-height: 1.2;
             text-transform: uppercase;
-            letter-spacing: 0.3px;
+            letter-spacing: 0.2px;
         }
 
         .kpi-card-exec .kpi-num {
-            font-size: 2rem;
+            font-size: 1.8rem;
             font-weight: 800;
             line-height: 1;
+            margin: 4px 0;
+        }
+
+        .kpi-card-exec .kpi-money {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #64748b;
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 4px;
+            margin-top: 4px;
         }
 
         /* Bordes superiores diferenciadores */
@@ -255,6 +265,14 @@ def procesar_cruce_python(
     if s.endswith(".0"):
       s = s[:-2]
     return s if s not in ["nan", "None"] else ""
+
+  def es_requerimiento_valido(val):
+    s = clean_key(val)
+    if not s or s == "0":
+      return False
+    if not s.isdigit():
+      return False
+    return True
 
   # 1. Cargar Excels
   df_costos = pd.read_excel(r_novasoft)
@@ -579,7 +597,8 @@ def procesar_cruce_python(
   agrupado_status = {}
   for _, row in df_costos_filtered.iterrows():
     rq = clean_key(row["Requerimiento"])
-    if not rq:
+
+    if not es_requerimiento_valido(rq):
       rq = "0"
 
     debit = float(row[col_deb]) if pd.notna(row[col_deb]) else 0
@@ -600,7 +619,7 @@ def procesar_cruce_python(
     agrupado_status[rq]["val_fac"] += val_fac
     agrupado_status[rq]["conteo"] += 1
 
-    if fac_num and fac_num not in ["0", ""]:
+    if fac_num and fac_num not in ["0", "0.0"]:
       agrupado_status[rq]["facturaRef"] = fac_num
 
   status_map = {}
@@ -611,7 +630,7 @@ def procesar_cruce_python(
 
     if rq == "0":
       status = "SIN REQUERIMIENTO"
-    elif str(data["facturaRef"]) in ["0", ""]:
+    elif str(data["facturaRef"]) in ["0", "0.0", ""]:
       status = "SIN FACTURAR AL CLIENTE"
     elif utilidad <= 0:
       status = "A PERDIDA"
@@ -622,19 +641,24 @@ def procesar_cruce_python(
 
   def get_obs2(row):
     rq_str = clean_key(row["Requerimiento"])
-    if not rq_str or rq_str == "0":
-      estado_original = "SIN REQUERIMIENTO"
-    else:
-      obs = status_map.get(rq_str, "SIN REQUERIMIENTO")
-      concat_req = row["ConcatenadoRequerimiento"]
-      val_concat_cliente = map_factura_cliente_val.get(concat_req, 0)
 
-      if obs == "SIN FACTURAR AL CLIENTE" and val_concat_cliente > 0:
-        deb = float(row[col_deb]) if pd.notna(row[col_deb]) else 0
-        util_concat = val_concat_cliente - deb
-        estado_original = "SIN NOVEDAD" if util_concat > 0 else "A PERDIDA"
-      else:
-        estado_original = obs
+    if not es_requerimiento_valido(rq_str):
+      return MAPA_ESTADOS["SIN REQUERIMIENTO"]
+
+    fac_num = clean_key(row["FACTURA"])
+    if not fac_num or fac_num in ["0", "0.0"]:
+      return MAPA_ESTADOS["SIN FACTURAR AL CLIENTE"]
+
+    obs = status_map.get(rq_str, "SIN REQUERIMIENTO")
+    concat_req = row["ConcatenadoRequerimiento"]
+    val_concat_cliente = map_factura_cliente_val.get(concat_req, 0)
+
+    if obs == "SIN FACTURAR AL CLIENTE" and val_concat_cliente > 0:
+      deb = float(row[col_deb]) if pd.notna(row[col_deb]) else 0
+      util_concat = val_concat_cliente - deb
+      estado_original = "SIN NOVEDAD" if util_concat > 0 else "A PERDIDA"
+    else:
+      estado_original = obs
 
     return MAPA_ESTADOS.get(estado_original, estado_original)
 
@@ -747,7 +771,7 @@ with col_btn_center:
           " cruce."
       )
     else:
-      with st.spinner("⚡ Procesando bases de datos..."):
+      with st.spinner("⚡ Procesando cruce de datos en Python..."):
         try:
           r1 = os.path.join(CARPETA_DESTINO, f1.name)
           r2 = os.path.join(CARPETA_DESTINO, f2.name)
@@ -795,7 +819,7 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
       cant_perdida = conteos.get(nombre_perdida, 0)
       cant_sin_req = conteos.get(nombre_sin_req, 0)
 
-      # BARRA DE RESUMEN EJECUTIVO / METRICAS
+      # BUSCAR COLUMNA DE DÉBITOS
       col_deb_nombre = None
       for c in df_depurado.columns:
         if "DEBITO" in c.upper() or "DÉBITO" in c.upper():
@@ -812,10 +836,46 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
           if "VALOR FACTURA" in df_depurado.columns
           else 0
       )
-      pct_eficiencia = (
-          (cant_correcta / total_filas * 100) if total_filas > 0 else 0
-      )
 
+      # BUSCAR COLUMNA DE DIAN (BÚSQUEDA INSENSIBLE A MAYÚSCULAS Y ESPACIOS)
+      col_dian_cruce = None
+      for c in df_depurado.columns:
+        if "DIAN" in c.upper():
+          col_dian_cruce = c
+          break
+
+      if col_dian_cruce and "FP" in df_depurado.columns:
+        # CONTEO ROBUSTO TOLERANTE A ESPACIOS
+        mask_fp = df_depurado["FP"].notna() & (
+            df_depurado["FP"].astype(str).str.strip() != ""
+        )
+        mask_alerta = (
+            df_depurado[col_dian_cruce]
+            .astype(str)
+            .str.upper()
+            .str.contains("ALERTA", na=False)
+        )
+        cant_alertas_dian = len(df_depurado[mask_fp & mask_alerta])
+      elif col_dian_cruce:
+        mask_alerta = (
+            df_depurado[col_dian_cruce]
+            .astype(str)
+            .str.upper()
+            .str.contains("ALERTA", na=False)
+        )
+        cant_alertas_dian = len(df_depurado[mask_alerta])
+      else:
+        cant_alertas_dian = 0
+
+      # CÁLCULO DE UTILIDAD GENERAL (%)
+      if monto_debitos != 0:
+        utilidad_general_pct = (
+            (monto_facturado - monto_debitos) / monto_debitos
+        ) * 100
+      else:
+        utilidad_general_pct = 0.0
+
+      # BARRA DE RESUMEN EJECUTIVO
       st.markdown(
           f"""
             <div class="summary-bar">
@@ -828,12 +888,39 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
                     <div class="value">$ {monto_facturado:,.0f} COP</div>
                 </div>
                 <div class="summary-item">
-                    <div class="label">Eficiencia de Gestión</div>
-                    <div class="value">{pct_eficiencia:.1f}%</div>
+                    <div class="label">Utilidad General</div>
+                    <div class="value">{utilidad_general_pct:.2f}%</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Cant. Alertas DIAN</div>
+                    <div class="value">{cant_alertas_dian:,}</div>
                 </div>
             </div>
             """,
           unsafe_allow_html=True,
+      )
+
+      # CÁLCULO DE VALORES ($) ESPECÍFICOS PARA CADA TARJETA KPI
+      monto_sin_cobro = (
+          df_depurado[df_depurado["OBS_2"] == nombre_sin_cobro][
+              col_deb_nombre
+          ].sum()
+          if col_deb_nombre
+          else 0
+      )
+
+      monto_perdida_utilidad = (
+          df_depurado[df_depurado["OBS_2"] == nombre_perdida]["UTILIDAD"].sum()
+          if "UTILIDAD" in df_depurado.columns
+          else 0
+      )
+
+      monto_sin_req_debit = (
+          df_depurado[df_depurado["OBS_2"] == nombre_sin_req][
+              col_deb_nombre
+          ].sum()
+          if col_deb_nombre
+          else 0
       )
 
       st.markdown('<div class="card-box">', unsafe_allow_html=True)
@@ -847,6 +934,7 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
             <div class="kpi-card-exec border-total">
                 <h4>Total Filas Procesadas</h4>
                 <div class="kpi-num">{total_filas:,}</div>
+                <div style="visibility: hidden;" class="kpi-money">-</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -858,6 +946,7 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
             <div class="kpi-card-exec border-correcto">
                 <h4>{nombre_correcta}</h4>
                 <div class="kpi-num">{cant_correcta:,}</div>
+                <div style="visibility: hidden;" class="kpi-money">-</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -869,6 +958,7 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
             <div class="kpi-card-exec border-nocobro">
                 <h4>{nombre_sin_cobro}</h4>
                 <div class="kpi-num">{cant_sin_cobro:,}</div>
+                <div class="kpi-money">$ {monto_sin_cobro:,.0f} COP</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -880,6 +970,7 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
             <div class="kpi-card-exec border-perdida">
                 <h4>{nombre_perdida}</h4>
                 <div class="kpi-num">{cant_perdida:,}</div>
+                <div class="kpi-money">$ {monto_perdida_utilidad:,.0f} COP</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -891,6 +982,7 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
             <div class="kpi-card-exec border-sinreq">
                 <h4>{nombre_sin_req}</h4>
                 <div class="kpi-num">{cant_sin_req:,}</div>
+                <div class="kpi-money">$ {monto_sin_req_debit:,.0f} COP</div>
             </div>
             """,
             unsafe_allow_html=True,
