@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import pandas as pd
 import streamlit as st
 
@@ -18,12 +19,10 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-        /* Importar fuente oficial Montserrat */
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
 
         .stApp { background-color: #f1f5f9; }
 
-        /* Contenedor tipo "Hoja/Página" amplio */
         .block-container {
             max-width: 1550px !important;
             padding: 35px 50px !important;
@@ -35,13 +34,11 @@ st.markdown(
             margin-bottom: 35px;
         }
 
-        /* Tipografía oficial */
         html, body, [class*="css"] {
             font-family: 'Montserrat', sans-serif !important;
             color: #1e293b;
         }
 
-        /* BANNER INSTITUCIONAL DE ENCABEZADO CON LOGO COMPLETO */
         .header-brand {
             display: flex;
             align-items: center;
@@ -94,7 +91,6 @@ st.markdown(
             margin-bottom: 15px;
         }
 
-        /* Top Bar de Resumen Financiero */
         .summary-bar {
             background-color: #1e293b;
             color: white;
@@ -123,7 +119,6 @@ st.markdown(
             margin-top: 2px;
         }
 
-        /* Botones Principales */
         div.stButton > button[kind="primary"], div.stDownloadButton > button[kind="primary"] {
             background-color: #1179bf !important;
             color: white !important;
@@ -155,7 +150,6 @@ st.markdown(
             border: 1px solid #c2e28f;
         }
 
-        /* TARJETAS KPI MINIMALISTAS CON SUBTEXTO DE DINERO */
         .kpi-card-exec {
             background-color: #ffffff;
             border-radius: 10px;
@@ -194,7 +188,6 @@ st.markdown(
             margin-top: 4px;
         }
 
-        /* Bordes superiores diferenciadores */
         .border-total { border-top: 5px solid #1e293b; }
         .border-total h4 { color: #1e293b !important; }
         .border-total .kpi-num { color: #1e293b; }
@@ -252,6 +245,7 @@ def guardar_archivo(uploaded_file):
 def procesar_cruce_python(
     r_novasoft,
     r_reversiones,
+    r_f100,
     r_cuadro,
     r_fact_nova,
     r_dian,
@@ -277,12 +271,57 @@ def procesar_cruce_python(
   # 1. Cargar Excels
   df_costos = pd.read_excel(r_novasoft)
   df_rev = pd.read_excel(r_reversiones)
+
+  # Carga de F-100 (Requerimiento 1)
+  try:
+    excel_f100 = pd.ExcelFile(r_f100)
+    hoja_f100 = (
+        "F-100 G. TIGO"
+        if "F-100 G. TIGO" in excel_f100.sheet_names
+        else excel_f100.sheet_names[0]
+    )
+    df_f100 = pd.read_excel(r_f100, sheet_name=hoja_f100)
+  except Exception:
+    df_f100 = pd.DataFrame()
+
   df_cuadro = pd.read_excel(r_cuadro)
   df_fnova = pd.read_excel(r_fact_nova)
   df_dian = pd.read_excel(r_dian)
 
-  for df in [df_costos, df_rev, df_cuadro, df_fnova, df_dian]:
+  for df in [df_costos, df_rev, df_f100, df_cuadro, df_fnova, df_dian]:
     df.columns = df.columns.astype(str).str.strip()
+
+  # PROCESAMIENTO REQUERIMIENTO 1: Extraer "RQ" de la columna Observacion F100
+  f100_rq_set = set()
+  col_obs_f100 = None
+  for c in df_f100.columns:
+    if "OBSERVAC" in c.upper() and "F100" in c.upper():
+      col_obs_f100 = c
+      break
+  if not col_obs_f100 and len(df_f100.columns) > 0:
+    for c in df_f100.columns:
+      if "OBS" in c.upper():
+        col_obs_f100 = c
+        break
+
+  if col_obs_f100 and col_obs_f100 in df_f100.columns:
+
+    def extraer_rq_f100(texto):
+      if pd.isna(texto) or not texto:
+        return ""
+      # Busca los números inmediatamente después del carácter @ (ej. @2013004*)
+      match = re.search(r"@(\d+)", str(texto))
+      if match:
+        return match.group(1)
+      return ""
+
+    df_f100["RQ"] = df_f100[col_obs_f100].apply_raw(
+        extraer_rq_f100
+    ) if hasattr(df_f100[col_obs_f100], 'apply_raw') else df_f100[col_obs_f100].apply(extraer_rq_f100)
+    
+    f100_rq_set = set(
+        df_f100["RQ"].apply(clean_key).replace("", None).dropna()
+    )
 
   # 2. Procesar Reversiones
   col_val_fact = None
@@ -672,6 +711,20 @@ def procesar_cruce_python(
 
   df_costos_filtered["OBS_2"] = df_costos_filtered.apply(get_obs2, axis=1)
 
+  # PROCESAMIENTO REQUERIMIENTO 2: CRUCE FINAL CON F-100
+  def cruce_final_f100(row):
+    estado_act = row["OBS_2"]
+    # Si su estado es diferente a "Gestión correcta"
+    if estado_act != MAPA_ESTADOS["SIN NOVEDAD"]:
+      rq = clean_key(row["Requerimiento"])
+      if rq and rq in f100_rq_set:
+        return "Requerimiento identificado en F-100"
+    return estado_act
+
+  df_costos_filtered["OBS_2"] = df_costos_filtered.apply(
+      cruce_final_f100, axis=1
+  )
+
   os.makedirs(carpeta_salida, exist_ok=True)
   df_costos_filtered.to_excel(ruta_excel_salida, index=False)
 
@@ -697,7 +750,7 @@ st.markdown(
 )
 
 # ==========================================
-# SECCIÓN 1: CARGA DE BASES DE DATOS Y EJECUCIÓN (CON TOOLTIPS DE COMENTARIOS)
+# SECCIÓN 1: CARGA DE BASES DE DATOS Y EJECUCIÓN
 # ==========================================
 st.markdown("<h2>1. 📁 Carga de Bases de Datos</h2>", unsafe_allow_html=True)
 st.markdown(
@@ -828,9 +881,11 @@ with col_btn_center:
           r5 = os.path.join(CARPETA_DESTINO, f5.name)
           r6 = os.path.join(CARPETA_DESTINO, f6.name)
 
+          # Se incluye r3 (F-100) en el llamado
           procesar_cruce_python(
               r1,
               r2,
+              r3,
               r4,
               r5,
               r6,
@@ -867,59 +922,59 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
       cant_perdida = conteos.get(nombre_perdida, 0)
       cant_sin_req = conteos.get(nombre_sin_req, 0)
 
-      # BUSCAR COLUMNA DE DÉBITOS
+      # COLUMNA DÉBITOS MONEDA LOCAL
       col_deb_nombre = None
       for c in df_depurado.columns:
         if "DEBITO" in c.upper() or "DÉBITO" in c.upper():
           col_deb_nombre = c
           break
 
-      # AJUSTE 3: "Monto Revisado" en lugar de "Monto Débitos Moneda Local"
       monto_revisado = (
-          df_depurado[col_deb_nombre].sum()
+          float(df_depurado[col_deb_nombre].sum())
           if col_deb_nombre and col_deb_nombre in df_depurado.columns
-          else 0
+          else 0.0
       )
 
-      # CÁLCULOS DE MONTO POR TARJETA
-      # 1. Sin cobro al cliente (Monto Débitos)
       monto_sin_cobro = (
-          df_depurado[df_depurado["OBS_2"] == nombre_sin_cobro][
-              col_deb_nombre
-          ].sum()
+          float(
+              df_depurado[df_depurado["OBS_2"] == nombre_sin_cobro][
+                  col_deb_nombre
+              ].sum()
+          )
           if col_deb_nombre
-          else 0
+          else 0.0
       )
 
-      # AJUSTE 1: "Facturación del proveedor con pérdida" como valor POSITIVO (* -1)
       raw_utilidad_perdida = (
-          df_depurado[df_depurado["OBS_2"] == nombre_perdida]["UTILIDAD"].sum()
+          float(
+              df_depurado[df_depurado["OBS_2"] == nombre_perdida][
+                  "UTILIDAD"
+              ].sum()
+          )
           if "UTILIDAD" in df_depurado.columns
-          else 0
+          else 0.0
       )
       monto_perdida_utilidad_pos = abs(raw_utilidad_perdida)
 
-      # 3. Sin requerimientos identificados (Monto Débitos)
       monto_sin_req_debit = (
-          df_depurado[df_depurado["OBS_2"] == nombre_sin_req][
-              col_deb_nombre
-          ].sum()
+          float(
+              df_depurado[df_depurado["OBS_2"] == nombre_sin_req][
+                  col_deb_nombre
+              ].sum()
+          )
           if col_deb_nombre
-          else 0
+          else 0.0
       )
 
-      # AJUSTE 2: "Valor total Alertas" = Pérdida (Positiva) + Sin Cobro + Sin Requerimiento
       valor_total_alertas = (
           monto_perdida_utilidad_pos + monto_sin_cobro + monto_sin_req_debit
       )
 
-      # AJUSTE 4: "% de Alertas" = (Valor total Alertas / Monto Revisado) * 100
-      if monto_revisado != 0:
-        pct_alertas = (valor_total_alertas / monto_revisado) * 100
+      if monto_revisado > 0:
+        pct_alertas = (valor_total_alertas / monto_revisado) * 100.0
       else:
         pct_alertas = 0.0
 
-      # CÁLCULO DE ALERTAS DIAN
       col_dian_cruce = None
       for c in df_depurado.columns:
         if "DIAN" in c.upper():
@@ -927,17 +982,22 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
           break
 
       if col_dian_cruce and "Cruce con DIAN" in df_depurado.columns:
-        cant_alertas_dian = (
-            df_depurado["Cruce con DIAN"].astype(str).str.strip() == "Alerta"
-        ).sum()
+        cant_alertas_dian = int(
+            (
+                df_depurado["Cruce con DIAN"].astype(str).str.strip()
+                == "Alerta"
+            ).sum()
+        )
       elif col_dian_cruce:
-        cant_alertas_dian = (
-            df_depurado[col_dian_cruce].astype(str).str.strip() == "Alerta"
-        ).sum()
+        cant_alertas_dian = int(
+            (
+                df_depurado[col_dian_cruce].astype(str).str.strip() == "Alerta"
+            ).sum()
+        )
       else:
         cant_alertas_dian = 0
 
-      # BARRA DE RESUMEN EJECUTIVO (Puntos 2, 3 y 4 del Feedback)
+      # BARRA SUPERIOR DE RESUMEN FINANCIERO
       st.markdown(
           f"""
             <div class="summary-bar">
@@ -964,7 +1024,7 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
 
       st.markdown('<div class="card-box">', unsafe_allow_html=True)
 
-      # TARJETAS DE KPI REORDENADAS CON VALOR POSITIVO EN PÉRDIDA (Ajuste 1)
+      # TARJETAS KPI
       kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
 
       with kpi1:
@@ -1070,6 +1130,8 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
           return "background-color: rgba(249, 115, 22, 0.25); color: #7c2d12; font-weight: bold;"
         elif val == MAPA_ESTADOS["SIN REQUERIMIENTO"]:
           return "background-color: rgba(17, 121, 191, 0.25); color: #0c4a6e; font-weight: bold;"
+        elif val == "Requerimiento identificado en F-100":
+          return "background-color: rgba(168, 85, 247, 0.25); color: #581c87; font-weight: bold;"
         return ""
 
       df_styled = df_mostrar.style.map(color_obs2, subset=["OBS_2"])
@@ -1080,7 +1142,7 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
       )
       st.dataframe(df_styled, use_container_width=True, height=450)
 
-      # EXPORTAR RESPETANDO FILTRO Y BÚSQUEDA
+      # EXPORTAR RESPETANDO FILTROS
       with col_btn_exp:
         st.write("##")
         buffer_excel = io.BytesIO()
