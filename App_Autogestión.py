@@ -874,18 +874,52 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
           col_deb_nombre = c
           break
 
-      monto_debitos = (
+      # AJUSTE 3: "Monto Revisado" en lugar de "Monto Débitos Moneda Local"
+      monto_revisado = (
           df_depurado[col_deb_nombre].sum()
           if col_deb_nombre and col_deb_nombre in df_depurado.columns
           else 0
       )
-      monto_facturado = (
-          df_depurado["VALOR FACTURA"].sum()
-          if "VALOR FACTURA" in df_depurado.columns
+
+      # CÁLCULOS DE MONTO POR TARJETA
+      # 1. Sin cobro al cliente (Monto Débitos)
+      monto_sin_cobro = (
+          df_depurado[df_depurado["OBS_2"] == nombre_sin_cobro][
+              col_deb_nombre
+          ].sum()
+          if col_deb_nombre
           else 0
       )
 
-      # CÁLCULO PRECISO Y EXATCO DE ALERTAS DIAN (Ajuste Solucionado)
+      # AJUSTE 1: "Facturación del proveedor con pérdida" como valor POSITIVO (* -1)
+      raw_utilidad_perdida = (
+          df_depurado[df_depurado["OBS_2"] == nombre_perdida]["UTILIDAD"].sum()
+          if "UTILIDAD" in df_depurado.columns
+          else 0
+      )
+      monto_perdida_utilidad_pos = abs(raw_utilidad_perdida)
+
+      # 3. Sin requerimientos identificados (Monto Débitos)
+      monto_sin_req_debit = (
+          df_depurado[df_depurado["OBS_2"] == nombre_sin_req][
+              col_deb_nombre
+          ].sum()
+          if col_deb_nombre
+          else 0
+      )
+
+      # AJUSTE 2: "Valor total Alertas" = Pérdida (Positiva) + Sin Cobro + Sin Requerimiento
+      valor_total_alertas = (
+          monto_perdida_utilidad_pos + monto_sin_cobro + monto_sin_req_debit
+      )
+
+      # AJUSTE 4: "% de Alertas" = (Valor total Alertas / Monto Revisado) * 100
+      if monto_revisado != 0:
+        pct_alertas = (valor_total_alertas / monto_revisado) * 100
+      else:
+        pct_alertas = 0.0
+
+      # CÁLCULO DE ALERTAS DIAN
       col_dian_cruce = None
       for c in df_depurado.columns:
         if "DIAN" in c.upper():
@@ -903,29 +937,21 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
       else:
         cant_alertas_dian = 0
 
-      # CÁLCULO DE UTILIDAD GENERAL (%)
-      if monto_debitos != 0:
-        utilidad_general_pct = (
-            (monto_facturado - monto_debitos) / monto_debitos
-        ) * 100
-      else:
-        utilidad_general_pct = 0.0
-
-      # BARRA DE RESUMEN EJECUTIVO
+      # BARRA DE RESUMEN EJECUTIVO (Puntos 2, 3 y 4 del Feedback)
       st.markdown(
           f"""
             <div class="summary-bar">
                 <div class="summary-item">
-                    <div class="label">Monto Débitos Moneda Local</div>
-                    <div class="value">$ {monto_debitos:,.0f} COP</div>
+                    <div class="label">Monto Revisado</div>
+                    <div class="value">$ {monto_revisado:,.0f} COP</div>
                 </div>
                 <div class="summary-item">
-                    <div class="label">Monto Facturado Proveedor</div>
-                    <div class="value">$ {monto_facturado:,.0f} COP</div>
+                    <div class="label">Valor total Alertas</div>
+                    <div class="value">$ {valor_total_alertas:,.0f} COP</div>
                 </div>
                 <div class="summary-item">
-                    <div class="label">Utilidad General</div>
-                    <div class="value">{utilidad_general_pct:.2f}%</div>
+                    <div class="label">% de Alertas</div>
+                    <div class="value">{pct_alertas:.2f}%</div>
                 </div>
                 <div class="summary-item">
                     <div class="label">Cant. Alertas DIAN</div>
@@ -936,32 +962,9 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
           unsafe_allow_html=True,
       )
 
-      # CÁLCULO DE VALORES ($) ESPECÍFICOS PARA CADA TARJETA KPI
-      monto_sin_cobro = (
-          df_depurado[df_depurado["OBS_2"] == nombre_sin_cobro][
-              col_deb_nombre
-          ].sum()
-          if col_deb_nombre
-          else 0
-      )
-
-      monto_perdida_utilidad = (
-          df_depurado[df_depurado["OBS_2"] == nombre_perdida]["UTILIDAD"].sum()
-          if "UTILIDAD" in df_depurado.columns
-          else 0
-      )
-
-      monto_sin_req_debit = (
-          df_depurado[df_depurado["OBS_2"] == nombre_sin_req][
-              col_deb_nombre
-          ].sum()
-          if col_deb_nombre
-          else 0
-      )
-
       st.markdown('<div class="card-box">', unsafe_allow_html=True)
 
-      # TARJETAS DE KPI REORDENADAS
+      # TARJETAS DE KPI REORDENADAS CON VALOR POSITIVO EN PÉRDIDA (Ajuste 1)
       kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
 
       with kpi1:
@@ -1006,7 +1009,7 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
             <div class="kpi-card-exec border-perdida">
                 <h4>{nombre_perdida}</h4>
                 <div class="kpi-num">{cant_perdida:,}</div>
-                <div class="kpi-money">$ {monto_perdida_utilidad:,.0f} COP</div>
+                <div class="kpi-money">$ {monto_perdida_utilidad_pos:,.0f} COP</div>
             </div>
             """,
             unsafe_allow_html=True,
