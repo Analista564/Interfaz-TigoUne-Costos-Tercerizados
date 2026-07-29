@@ -41,7 +41,7 @@ st.markdown(
             color: #1e293b;
         }
 
-        /* BANNER INSTITUCIONAL DE ENCABEZADO */
+        /* BANNER INSTITUCIONAL DE ENCABEZADO CON LOGO COMPLETO */
         .header-brand {
             display: flex;
             align-items: center;
@@ -56,32 +56,28 @@ st.markdown(
             border-top: 1px solid #e2e8f0;
             border-bottom: 1px solid #e2e8f0;
         }
+        .header-brand-content {
+            display: flex;
+            align-items: center;
+            gap: 25px;
+        }
+        .header-brand img {
+            height: 65px; /* Altura ideal para el logo completo con slogan */
+            width: auto;
+            object-fit: contain;
+        }
         .header-brand .title-text h1 {
             color: #1179bf !important;
             font-weight: 800;
             margin: 0;
-            font-size: 2.1rem;
+            font-size: 1.9rem;
             letter-spacing: -0.5px;
         }
         .header-brand .title-text p {
             color: #555;
-            margin: 4px 0 0 0;
-            font-size: 1.02rem;
+            margin: 3px 0 0 0;
+            font-size: 0.98rem;
             font-weight: 500;
-        }
-        .brand-logo-badge {
-            background-color: #ffffff;
-            padding: 10px 18px;
-            border-radius: 8px;
-            border: 1px solid #cbd5e1;
-            font-weight: 800;
-            font-size: 1.25rem;
-            color: #1179bf;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.03);
-            text-align: right;
-        }
-        .brand-logo-badge span {
-            color: #83b431;
         }
 
         h2, h3, .section-header {
@@ -651,17 +647,17 @@ def procesar_cruce_python(
 
 
 # ==========================================
-# REQUERIMIENTO 1: BANNER DE ENCABEZADO INSTITUCIONAL
+# BANNER INSTITUCIONAL CON LOGO COMPLETO SVG
 # ==========================================
 st.markdown(
     """
     <div class="header-brand">
-        <div class="title-text">
-            <h1>🤖 Auditor-IA Costos Tercerizados TigoUNE</h1>
-            <p>Plataforma Corporativa para el Cruce de Costos vs. Facturado</p>
-        </div>
-        <div class="brand-logo-badge">
-            Casalimpia<span>S.A.</span>
+        <div class="header-brand-content">
+            <img src="https://cdn1.totalcommerce.cloud/casalimpia/web_content/assets/logo-casa-limpia.svg" alt="Casalimpia Logo" />
+            <div class="title-text">
+                <h1>Auditor-IA Costos Tercerizados TigoUNE</h1>
+                <p>Plataforma Corporativa para el Cruce de Costos vs. Facturado</p>
+            </div>
         </div>
     </div>
 """,
@@ -683,7 +679,7 @@ st.markdown('<div class="card-box">', unsafe_allow_html=True)
 col1, col2, col3 = st.columns([1, 1, 1])
 
 with col1:
-  f1 = st.file_uploader("1. BBDD Novasoft (Obligatorio)", type=["xlsx"])
+  f1 = st.file_uploader("1. BBDD Costos Novasoft (Obligatorio)", type=["xlsx"])
   if f1:
     guardar_archivo(f1)
     st.markdown(
@@ -751,7 +747,7 @@ with col_btn_center:
           " cruce."
       )
     else:
-      with st.spinner("⚡ Procesando cruce de datos en Python..."):
+      with st.spinner("⚡ Procesando bases de datos..."):
         try:
           r1 = os.path.join(CARPETA_DESTINO, f1.name)
           r2 = os.path.join(CARPETA_DESTINO, f2.name)
@@ -799,7 +795,7 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
       cant_perdida = conteos.get(nombre_perdida, 0)
       cant_sin_req = conteos.get(nombre_sin_req, 0)
 
-      # REQUERIMIENTO 6: CÁLCULOS PARA BARRA DE RESUMEN EJECUTIVO / METRICAS
+      # BARRA DE RESUMEN EJECUTIVO / METRICAS
       col_deb_nombre = None
       for c in df_depurado.columns:
         if "DEBITO" in c.upper() or "DÉBITO" in c.upper():
@@ -820,7 +816,6 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
           (cant_correcta / total_filas * 100) if total_filas > 0 else 0
       )
 
-      # REQUERIMIENTO 6: TOP BAR DE INDICADORES FINANCIEROS
       st.markdown(
           f"""
             <div class="summary-bar">
@@ -903,7 +898,7 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
 
       st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
 
-      # REQUERIMIENTO 4 & FILTROS: FILTRO POR ESTADO + BUSCADOR UNIVERSAL
+      # FILTROS Y BUSCADOR UNIVERSAL
       col_filtro_est, col_busqueda, col_btn_exp = st.columns([1.5, 1.5, 1])
 
       opciones_filtro = ["Todos los estados"] + sorted(
@@ -916,13 +911,11 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
         )
 
       with col_busqueda:
-        # REQUERIMIENTO 4: Buscador universal por cualquier columna
         texto_busqueda = st.text_input(
             "🔎 **Buscador en la Tabla:**",
             placeholder="Factura, NIT, Proveedor, RQ...",
         )
 
-      # Aplicar Filtro de Estado
       if estado_seleccionado != "Todos los estados":
         df_mostrar = df_depurado[
             df_depurado["OBS_2"] == estado_seleccionado
@@ -930,7 +923,6 @@ if os.path.exists(RUTA_ARCHIVO_DEPURADO):
       else:
         df_mostrar = df_depurado.copy()
 
-      # Aplicar Filtro del Buscador
       if texto_busqueda.strip() != "":
         mask = df_mostrar.astype(str).apply(
             lambda row: row.str.contains(texto_busqueda, case=False, na=False)
